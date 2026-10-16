@@ -1,0 +1,36 @@
+name: Format
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.32.5'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Check formatting (dry-run, excluding generated)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -d '' FILES < <(git ls-files -z -- '*.dart' ':!lib/generated/**')
+          if [ "${#FILES[@]}" -eq 0 ]; then
+            echo "No Dart files to check."
+            exit 0
+          fi
+          dart --version
+          dart format --output=none --set-exit-if-changed -- "${FILES[@]}"

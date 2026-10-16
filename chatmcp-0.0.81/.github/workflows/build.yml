@@ -1,0 +1,159 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            platform: linux
+            apk_build: true
+          - os: macos-14
+            platform: macos
+            apk_build: false
+          - os: windows-2022
+            platform: windows
+            apk_build: false
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        if: matrix.apk_build
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '17'
+
+      - name: Setup Android SDK
+        if: matrix.apk_build
+        uses: android-actions/setup-android@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.32.5'
+          cache: true
+
+      - name: Create empty .env file
+        shell: bash
+        run: touch .env
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Setup Android Signing
+        if: matrix.apk_build && github.event_name != 'pull_request'
+        shell: bash
+        env:
+          SIGNING_KEYSTORE: ${{ secrets.SIGNING_KEYSTORE }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          mkdir -p android/app/keystore
+          if [ -n "$SIGNING_KEYSTORE" ]; then
+            echo "$SIGNING_KEYSTORE" | base64 -d > android/app/keystore/release.jks
+            echo "SIGNING_STORE_PATH=keystore/release.jks" >> "$GITHUB_ENV"
+            echo "SIGNING_KEY_ALIAS=$SIGNING_KEY_ALIAS" >> "$GITHUB_ENV"
+            echo "SIGNING_STORE_PASSWORD=$SIGNING_STORE_PASSWORD" >> "$GITHUB_ENV"
+            echo "SIGNING_KEY_PASSWORD=$SIGNING_KEY_PASSWORD" >> "$GITHUB_ENV"
+          fi
+
+      - name: Activate FastForge
+        run: dart pub global activate fastforge
+
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libgtk-3-dev locate libsqlite3-dev fuse libfuse2 libstdc++-12-dev patchelf
+          sudo updatedb
+          wget -O appimagetool "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
+          chmod +x appimagetool
+          sudo mv appimagetool /usr/local/bin/
+
+      - name: Build Linux and Android packages
+        if: matrix.platform == 'linux'
+        run: |
+          fastforge release --name=linux
+          fastforge release --name=android
+
+      - name: Verify AppImage GLIBC compatibility
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          set -e
+          shopt -s nullglob
+          found=0
+          for f in dist/**/*AppImage dist/*.AppImage; do
+            chmod +x "$f"
+            "$f" --appimage-extract >/dev/null 2>&1 || true
+            if [ -d squashfs-root/usr/lib ] && strings squashfs-root/usr/lib/libstdc++.so.6 | grep -E 'GLIBC_2\.(36|37|38|39)' -q; then
+              echo "$f contains libstdc++ requiring newer GLIBC" >&2
+              exit 1
+            fi
+            rm -rf squashfs-root
+            found=1
+          done
+          if [ "$found" -eq 0 ]; then echo "No AppImage files found; skipping check."; fi
+
+      - name: Setup Node.js
+        if: matrix.platform == 'macos'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install macOS packaging dependency
+        if: matrix.platform == 'macos'
+        run: npm install -g appdmg
+
+      - name: Build macOS package
+        if: matrix.platform == 'macos'
+        run: fastforge release --name=macos
+
+      - name: Clean Windows build state
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          flutter clean
+          if (Test-Path build) { Remove-Item -Recurse -Force build }
+          if (Test-Path windows\flutter\ephemeral) { Remove-Item -Recurse -Force windows\flutter\ephemeral }
+          flutter pub get
+
+      - name: Build Windows package
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        env:
+          CMAKE_GENERATOR: Visual Studio 17 2022
+          CMAKE_GENERATOR_PLATFORM: x64
+          CMAKE_GENERATOR_TOOLSET: v143
+        run: |
+          flutter build windows --release --build-name=0.0.76 --build-number=76
+          fastforge release --name=windows
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.platform }}
+          path: dist/*/*
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.MY_GITHUB_TOKEN }}
