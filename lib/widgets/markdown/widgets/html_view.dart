@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter/foundation.dart';
 import 'package:chatmcp/generated/app_localizations.dart';
@@ -158,6 +159,9 @@ class _HtmlViewState extends State<HtmlView> {
 
     final webView = InAppWebView(
       key: _webViewKey,
+      gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+        Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()),
+      },
       initialSettings: InAppWebViewSettings(
         javaScriptEnabled: true,
         javaScriptCanOpenWindowsAutomatically: true,
@@ -175,6 +179,10 @@ class _HtmlViewState extends State<HtmlView> {
         allowFileAccessFromFileURLs: true,
         allowUniversalAccessFromFileURLs: true,
         mediaPlaybackRequiresUserGesture: false,
+        disableVerticalScroll: false,
+        disableHorizontalScroll: false,
+        verticalScrollBarEnabled: true,
+        horizontalScrollBarEnabled: true,
       ),
       onWebViewCreated: (controller) => _initWebView(controller),
       onLoadStop: (controller, url) async {

@@ -1187,25 +1187,39 @@ class _ChatPageState extends State<ChatPage> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (BuildContext context) {
-        return Container(
-          decoration: BoxDecoration(
-            color: Theme.of(context).scaffoldBackgroundColor,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: DraggableScrollableSheet(
-            initialChildSize: 0.9,
-            minChildSize: 0.3,
-            maxChildSize: 0.9,
-            expand: false,
-            builder: (context, scrollController) {
-              return Column(
-                mainAxisSize: MainAxisSize.min,
+        return SizedBox(
+          height: MediaQuery.of(context).size.height * 0.9,
+          child: Container(
+            decoration: BoxDecoration(
+              color: Theme.of(context).scaffoldBackgroundColor,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: SafeArea(
+              bottom: true,
+              child: Column(
                 children: [
-                  Container(
-                    width: 40,
-                    height: 4,
-                    margin: const EdgeInsets.symmetric(vertical: 16),
-                    decoration: BoxDecoration(color: AppColors.getBottomSheetHandleColor(context), borderRadius: BorderRadius.circular(2)),
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onVerticalDragUpdate: (details) {
+                      if (details.primaryDelta != null && details.primaryDelta! > 10) {
+                        Navigator.pop(context);
+                      }
+                    },
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      color: Colors.transparent,
+                      child: Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: AppColors.getBottomSheetHandleColor(context),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                   Expanded(
                     child: ProviderManager.chatProvider.artifactEvent != null
@@ -1213,8 +1227,8 @@ class _ChatPageState extends State<ChatPage> {
                         : Center(child: txtNoCodePreview),
                   ),
                 ],
-              );
-            },
+              ),
+            ),
           ),
         );
       },

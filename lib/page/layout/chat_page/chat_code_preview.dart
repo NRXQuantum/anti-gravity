@@ -2,6 +2,7 @@ import 'package:chatmcp/provider/provider_manager.dart';
 import 'package:chatmcp/utils/platform.dart';
 import 'package:chatmcp/widgets/markdown/widgets/html_view.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_highlight/themes/github.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -173,8 +174,22 @@ class _ChatCodePreviewState extends State<ChatCodePreview> {
     var t = AppLocalizations.of(context)!;
     return InAppWebView(
       key: _webViewKey,
-      initialSettings: InAppWebViewSettings(javaScriptEnabled: true, transparentBackground: true, isInspectable: kDebugMode),
-      initialUrlRequest: URLRequest(url: WebUri('http://localhost:$sandboxServerPort'), headers: {'Content-Type': 'text/html; charset=UTF-8'}),
+      gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+        Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()),
+      },
+      initialSettings: InAppWebViewSettings(
+        javaScriptEnabled: true,
+        transparentBackground: true,
+        isInspectable: kDebugMode,
+        disableVerticalScroll: false,
+        disableHorizontalScroll: false,
+        verticalScrollBarEnabled: true,
+        horizontalScrollBarEnabled: true,
+      ),
+      initialUrlRequest: URLRequest(
+        url: WebUri('http://localhost:$sandboxServerPort'),
+        headers: {'Content-Type': 'text/html; charset=UTF-8'},
+      ),
       onLoadStop: (controller, url) async {
         await Future.delayed(const Duration(milliseconds: 1000));
         // 注入并执行 JavaScript 代码

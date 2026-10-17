@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:markdown/markdown.dart' as md;
 
 // 属性匹配正则表达式
-final attributeRegex = RegExp(r'''([\w-]+)\s*=\s*(?:["']([^"'>]+)["']|([^\s>"']+))''');
+final attributeRegex = RegExp(
+  r'''([\w-]+)\s*=\s*(?:["']([^"'>\r\n]*)["']?|([^\s>"']+))''',
+  caseSensitive: false,
+);
 
 class TagInlineSyntax extends md.InlineSyntax {
   final String tag;
@@ -21,7 +24,7 @@ class TagInlineSyntax extends md.InlineSyntax {
         // 值可能在引号组或无引号组中
         final value = match.group(2) ?? match.group(3) ?? '';
         if (key.isNotEmpty) {
-          attributes[key] = value;
+          attributes[key] = value.trim();
         }
       }
     }
@@ -55,10 +58,10 @@ class TagBlockSyntax extends md.BlockSyntax {
   TagBlockSyntax({required this.tag});
 
   @protected
-  RegExp get startPattern => RegExp(r'^<' + tag + r'\s*([^>]*)>\s*$');
+  RegExp get startPattern => RegExp(r'^<' + tag + r'(?:[\s>].*|$)', caseSensitive: false);
 
   @protected
-  RegExp get endPattern => RegExp(r'^</' + tag + r'\s*([^>]*)>\s*$');
+  RegExp get endPattern => RegExp(r'^</' + tag + r'\s*([^>]*)>?\s*$', caseSensitive: false);
 
   @override
   RegExp get pattern => startPattern;
@@ -73,7 +76,7 @@ class TagBlockSyntax extends md.BlockSyntax {
         // 值可能在引号组或无引号组中
         final value = match.group(2) ?? match.group(3) ?? '';
         if (key.isNotEmpty) {
-          attributes[key] = value;
+          attributes[key] = value.trim();
         }
       }
     }
@@ -82,24 +85,57 @@ class TagBlockSyntax extends md.BlockSyntax {
 
   @override
   bool canParse(md.BlockParser parser) {
-    final match = startPattern.firstMatch(parser.current.content);
-    return match != null;
+    final line = parser.current.content.trimLeft();
+    return startPattern.hasMatch(line);
   }
 
   @override
   md.Node parse(md.BlockParser parser) {
-    final startMatch = startPattern.firstMatch(parser.current.content);
-    final openingAttributes = startMatch != null ? _parseAttributes(startMatch[1] ?? '') : <String, String>{};
+    String firstLine = parser.current.content;
+    parser.advance(); // Skip the opening line
+
+    String tagHeader = firstLine;
+    // If the opening line does not contain '>', check if next lines continue attributes
+    if (!firstLine.contains('>')) {
+      while (!parser.isDone) {
+        final nextLine = parser.current.content;
+        final trimmed = nextLine.trim();
+        final isCodeStart = RegExp(
+          r'^(?:<!DOCTYPE|<html|<head|<body|<script|<div|<style|import |export |const |let |var |function|def |class |graph |pie |flowchart |sequenceDiagram|```|#)',
+          caseSensitive: false,
+        ).hasMatch(trimmed);
+        final isClosing = RegExp(
+          r'^</' + tag,
+          caseSensitive: false,
+        ).hasMatch(trimmed);
+        if (trimmed.isEmpty || isCodeStart || isClosing) {
+          break;
+        }
+        tagHeader += ' $nextLine';
+        parser.advance();
+        if (nextLine.contains('>')) {
+          break;
+        }
+      }
+    }
+
+    // Extract attributes
+    String attrStr = tagHeader.replaceFirst(
+      RegExp(r'^<' + tag + r'\s*', caseSensitive: false),
+      '',
+    );
+    if (attrStr.endsWith('>')) {
+      attrStr = attrStr.substring(0, attrStr.length - 1);
+    }
+    final openingAttributes = _parseAttributes(attrStr);
 
     final lines = <String>[];
-    parser.advance(); // Skip the opening tag
-
     bool isClosed = false;
     Map<String, String> closingAttributes = {};
 
     while (!parser.isDone) {
       final line = parser.current.content;
-      final endMatch = endPattern.firstMatch(line);
+      final endMatch = endPattern.firstMatch(line.trim());
       if (endMatch != null) {
         isClosed = true;
         closingAttributes = _parseAttributes(endMatch[1] ?? '');

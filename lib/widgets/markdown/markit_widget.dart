@@ -45,6 +45,56 @@ class Markit extends StatefulWidget {
 
   const Markit({super.key, required this.data, this.textStyle});
 
+  static String normalizeMarkdown(String rawData) {
+    if (rawData.isEmpty) return rawData;
+    String data = rawData;
+
+    // 1. Fix unclosed opening tags like:
+    // <antArtifact identifier="foo" type="text/html" title="bar\n
+    // by ensuring quotes are balanced and ending with '>'
+    data = data.replaceAllMapped(
+      RegExp(
+        r'^(<(?:antArtifact|antThinking|think|function|call_function_result)\b[^>\n]*)(?<!>)$',
+        multiLine: true,
+        caseSensitive: false,
+      ),
+      (match) {
+        String tagLine = match.group(1)!;
+        int doubleQuotes = tagLine.split('"').length - 1;
+        int singleQuotes = tagLine.split("'").length - 1;
+        if (doubleQuotes % 2 != 0) {
+          tagLine += '"';
+        } else if (singleQuotes % 2 != 0) {
+          tagLine += "'";
+        }
+        return '$tagLine>';
+      },
+    );
+
+    // 2. Ensure unclosed code fences are closed
+    final fenceMatches = RegExp(r'^```', multiLine: true).allMatches(data);
+    if (fenceMatches.length % 2 != 0) {
+      data += '\n```\n';
+    }
+
+    // 3. Ensure unclosed <antArtifact> tags are closed at end of text
+    final openArtifacts = RegExp(
+      r'<antArtifact\b',
+      caseSensitive: false,
+    ).allMatches(data).length;
+    final closeArtifacts = RegExp(
+      r'</antArtifact>',
+      caseSensitive: false,
+    ).allMatches(data).length;
+    if (openArtifacts > closeArtifacts) {
+      for (int i = 0; i < (openArtifacts - closeArtifacts); i++) {
+        data += '\n</antArtifact>\n';
+      }
+    }
+
+    return data;
+  }
+
   @override
   State<Markit> createState() => _MarkitState();
 }
@@ -57,8 +107,9 @@ class _MarkitState extends State<Markit> {
   @override
   Widget build(BuildContext context) {
     final currentBrightness = Theme.of(context).brightness;
-    if (widget.data != _cachedData || _cachedMarkdown == null || _cachedBrightness != currentBrightness) {
-      _cachedData = widget.data;
+    final normalizedData = Markit.normalizeMarkdown(widget.data);
+    if (normalizedData != _cachedData || _cachedMarkdown == null || _cachedBrightness != currentBrightness) {
+      _cachedData = normalizedData;
       _cachedBrightness = currentBrightness;
 
       final isDark = currentBrightness == Brightness.dark;
